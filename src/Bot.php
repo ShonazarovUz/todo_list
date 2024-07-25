@@ -48,16 +48,12 @@ class Bot
 
     public function addTask(int $chatId, string $text): void
     {
-        // Get userId from DB by chatId
-        $stmt = $this->pdo->prepare("SELECT id FROM users where chat_id = :chat_id LIMIT 1");
+
+        $stmt = $this->pdo->prepare("SELECT id FROM users WHERE chat_id = :chat_id LIMIT 1");
         $stmt->execute(['chat_id' => $chatId]);
         $userId = $stmt->fetchObject()->id;
-
-        // Inserts a new task to the DB
         $task = new Task();
         $task->add($text, $userId);
-
-        // Updates users status
         $status = null;
         $stmt   = $this->pdo->prepare("UPDATE users SET status=:status WHERE chat_id = :chatId");
         $stmt->bindParam(':chatId', $chatId);
@@ -73,25 +69,34 @@ class Bot
     }
 
     public function getAllTasks(int $chatId): void
-{
-    $query = "SELECT * FROM todos WHERE user_id = (SELECT id FROM users WHERE chat_id = :chatId)";
-    var_dump($chatId);
-    $stmt  = $this->pdo->prepare($query);
-    $stmt->bindParam(':chatId', $chatId);
-    $stmt->execute();
-    $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    {
+        $query = "SELECT * FROM todos WHERE user_id = (SELECT id FROM users WHERE chat_id = :chatId LIMIT 1)";
+        $stmt  = $this->pdo->prepare($query);
+        $stmt->bindParam(':chatId', $chatId);
+        $stmt->execute();
+        $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$tasks = $this->prepareTasks($tasks);
+        $tasks = $this->prepareTasks($tasks);
 
-    $this->http->post('sendMessage', [
-        'form_params' => [
-            'chat_id'      => $chatId,
-            'text'         => $this->prepareTexts($tasks),
-            'reply_markup' => $this->prepareButtons($tasks)
-        ]
-    ]);
-}
-
+        $text = $this->prepareTexts($tasks);
+        $buttons = $this->prepareButtons($tasks);
+        if (!empty($text)) {
+            $this->http->post('sendMessage', [
+                'form_params' => [
+                    'chat_id'      => $chatId,
+                    'text'         => $text,
+                    'reply_markup' => $buttons
+                ]
+            ]);
+        } else {
+            $this->http->post('sendMessage', [
+                'form_params' => [
+                    'chat_id' => $chatId,
+                    'text'    => 'No tasks found.',
+                ]
+            ]);
+        }
+    }
 
     private function prepareTasks(array $tasks): array
     {
@@ -113,43 +118,66 @@ $tasks = $this->prepareTasks($tasks);
         $counter = 1;
         for ($task = 0; $task < count($tasks); $task++) {
             $status = $tasks[$task]['status'] === 0 ? '🟩' : '✅';
-            $text   .= $status." ".$counter + $task.". {$tasks[$task]['text']}\n";
+            $text   .= $status." ".($counter + $task).". {$tasks[$task]['text']}\n";
         }
 
         return $text;
     }
 
-    private function prepareButtons(array $tasks): false|string
+    private function prepareButtons(array $tasks): string
     {
         $buttons = ['inline_keyboard' => []];
         foreach ($tasks as $index => $task) {
-            $buttons['inline_keyboard'][] = [['text' => ++$index, 'callback_data' => $task['task_id']]];
+            $buttons['inline_keyboard'][] = [
+                ['text' => (string)$index, 'callback_data' => (string)$task['task_id']],
+                ['text' => 'Delete', 'callback_data' => 'delete_'.$task['task_id']]
+            ];
         }
 
         return json_encode($buttons);
     }
 
-    public function handleInlineButton(int $chatId, int $data): void
+    public function handleInlineButton(int $chatId, string $data): void
     {
-        $task = new Task();
+        if (strpos($data, 'delete_') === 0) {
+            $taskId = (int) str_replace('delete_', '', $data);
+            $this->deleteTask($taskId);
 
-        $currentTask = $task->getTask($data);
-
-        if ($currentTask->status === 0) {
-            $task->complete($data);
-            $text = 'Task completed';
+            $this->http->post('sendMessage', [
+                'form_params' => [
+                    'chat_id' => $chatId,
+                    'text'    => 'Task deleted successfully',
+                ]
+            ]);
         } else {
-            $task->uncompleted($data);
-            $text = 'Task uncompleted';
+            $task = new Task();
+            $taskId = (int)$data;
+
+            $currentTask = $task->getTask($taskId);
+
+            if ($currentTask->status === 0) {
+                $task->complete($taskId);
+                $text = 'Task completed';
+            } else {
+                $task->uncompleted($taskId);
+                $text = 'Task uncompleted';
+            }
+
+            $this->http->post('sendMessage', [
+                'form_params' => [
+                    'chat_id' => $chatId,
+                    'text'    => $text,
+                ]
+            ]);
         }
 
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id' => $chatId,
-                'text'    => $text,
-            ]
-        ]);
-
         $this->getAllTasks($chatId);
+    }
+
+    public function deleteTask(int $taskId): void
+    {
+        $stmt = $this->pdo->prepare("DELETE FROM todos WHERE id = :taskId");
+        $stmt->bindParam(':taskId', $taskId);
+        $stmt->execute();
     }
 }

@@ -2,162 +2,36 @@
 
 declare(strict_types=1);
 
-use GuzzleHttp\Client;
+$bot = new Bot();
 
-class Bot
-{
-    const TOKEN = "7338988336:AAGbgVAsM50awsV0COaYBB8u1Z7AEmyHR_0";
-    const API   = "https://api.telegram.org/bot".self::TOKEN."/";
-    public Client $http;
-    private PDO   $pdo;
+if (isset($update->message)) {
+    $message = $update->message;
+    $chatId  = $message->chat->id;
+    $text    = $message->text;
 
-    public function __construct()
-    {
-        $this->http = new Client(['base_uri' => self::API]);
-        $this->pdo  = DB::connect();
+    if ($text === "/start") {
+        $bot->handleStartCommand($chatId);
+        return;
     }
 
-    public function echo($update)
-    {
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id' => 262247413,
-                'text'    => print_r($update, true),
-            ]
-        ]);
-    }
-    public function handleStartCommand(int $chatId): void
-    {
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id' => $chatId,
-                'text'    => 'Welcome to The Best TODO App ever in entire Universe!',
-            ]
-        ]);
+    if ($text === "/add") {
+        $bot->handleAddCommand($chatId);
+        return;
     }
 
-    public function handleAddCommand(int $chatId): void
-    {
-        $status = 'add';
-        $query  = "INSERT INTO users (chat_id, status, created_at)
-                  VALUES (:chat_id, :status, NOW())
-                  ON DUPLICATE KEY UPDATE status = :status, created_at = NOW()";
-        $stmt   = $this->pdo->prepare($query);
-        $stmt->bindParam(':chat_id', $chatId);
-        $stmt->bindParam(':status', $status);
-        $stmt->execute();
-
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id' => $chatId,
-                'text'    => 'Please, enter your text',
-            ]
-        ]);
+    if ($text === "/all") {
+        $bot->getAllTasks($chatId);
+        return;
     }
 
-    public function addTask(int $chatId, string $text): void
-    {
-        // Get userId from DB by chatId
-        $stmt = $this->pdo->prepare("SELECT id FROM users where chat_id = :chat_id LIMIT 1");
-        $stmt->execute(['chat_id' => $chatId]);
-        $userId = $stmt->fetchObject()->id;
-
-        // Inserts a new task to the DB
-        $task = new Task();
-        $task->add($text, $userId);
-
-        // Updates users status
-        $status = null;
-        $stmt   = $this->pdo->prepare("UPDATE users SET status=:status WHERE chat_id = :chatId");
-        $stmt->bindParam(':chatId', $chatId);
-        $stmt->bindParam(':status', $status, PDO::PARAM_NULL);
-        $stmt->execute();
-
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id' => $chatId,
-                'text'    => 'Task added successfully',
-            ]
-        ]);
-    }
-
-    public function getAllTasks(int $chatId): void
-    {
-        $query = "SELECT * FROM todos WHERE user_id = (SELECT id FROM users WHERE chat_id = :chatId)";
-        $stmt  = $this->pdo->prepare($query);
-        $stmt->bindParam(':chatId', $chatId);
-        $stmt->execute();
-        $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $tasks = $this->prepareTasks($tasks);
-
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id'      => $chatId,
-                'text'         => $this->prepareTexts($tasks),
-                'reply_markup' => $this->prepareButtons($tasks)
-            ]
-        ]);
-    }
-
-    private function prepareTasks(array $tasks): array
-    {
-        $result = [];
-        foreach ($tasks as $task) {
-            $result[] = [
-                'task_id' => $task['id'],
-                'text'    => $task['text'],
-                'status'  => $task['status']
-            ];
-        }
-
-        return $result;
-    }
-
-    private function prepareTexts(array $tasks): string
-    {
-        $text    = '';
-        $counter = 1;
-        for ($task = 0; $task < count($tasks); $task++) {
-            $status = $tasks[$task]['status'] === 0 ? '🟩' : '✅';
-            $text   .= $status." ".$counter + $task.". {$tasks[$task]['text']}\n";
-        }
-
-        return $text;
-    }
-
-    private function prepareButtons(array $tasks): false|string
-    {
-        $buttons = ['inline_keyboard' => []];
-        foreach ($tasks as $index => $task) {
-            $buttons['inline_keyboard'][] = [['text' => ++$index, 'callback_data' => $task['task_id']]];
-        }
-
-        return json_encode($buttons);
-    }
-
-    public function handleInlineButton(int $chatId, int $data): void
-    {
-        $task = new Task();
-
-        $currentTask = $task->getTask($data);
-
-        if ($currentTask->status === 0) {
-            $task->complete($data);
-            $text = 'Task completed';
-        } else {
-            $task->uncompleted($data);
-            $text = 'Task uncompleted';
-        }
-
-        $this->http->post('sendMessage', [
-            'form_params' => [
-                'chat_id' => $chatId,
-                'text'    => $text,
-            ]
-        ]);
-
-        $this->getAllTasks($chatId);
-    }
+    $bot->addTask($chatId, $text);
 }
 
+if (isset($update->callback_query)) {
+    $callbackQuery = $update->callback_query;
+    $callbackData  = $callbackQuery->data; 
+    $chatId        = $callbackQuery->message->chat->id;
+    $messageId     = $callbackQuery->message->message_id;
+
+    $bot->handleInlineButton($chatId, $callbackData);
+}
