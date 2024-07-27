@@ -1,3 +1,4 @@
+TODO App
 Yet another Todo app. This application allows users to manage their tasks efficiently. It includes features like adding, completing, and deleting tasks. Additionally, it integrates with Telegram to manage tasks via a bot.
 
 Requirements
@@ -7,7 +8,7 @@ MySQL
 Installation
 Clone the repository:
 
-git clone https://github.com/Nurullayev2004/API.git
+git clone https://github.com/ShonazarovUz
 cd todo-app
 Install dependencies using Composer:
 
