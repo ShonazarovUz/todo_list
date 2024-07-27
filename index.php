@@ -1,6 +1,12 @@
 <?php
 
 require_once "vendor/autoload.php";
+
+use Dotenv\Dotenv;
+
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
 require 'functions.php';
 date_default_timezone_set('Asia/Tashkent');
 
@@ -20,4 +26,4 @@ if (isset($update) && isset($update->update_id)) {
 else{
     require "view.php";
 }
-require "view/home.php";
+require "view/home.php";   
