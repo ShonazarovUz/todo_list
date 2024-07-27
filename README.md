@@ -8,7 +8,7 @@ MySQL
 Installation
 Clone the repository:
 
-git clone https://github.com/ShonazarovUz
+git clone https://github.com/ShonazarovUz/todo_list
 cd todo-app
 Install dependencies using Composer:
 
